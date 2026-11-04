@@ -9,7 +9,10 @@ export function detectConversation(doc: Document, url: string): DetectedConversa
   let selectorStrategy: string | null = null;
 
   for (const strategy of MESSAGE_STRATEGIES) {
-    const elements = Array.from(doc.querySelectorAll(strategy.message));
+    // The sidebar lists other conversations; never count anything inside it.
+    const elements = Array.from(doc.querySelectorAll(strategy.message)).filter(
+      (el) => !el.closest('nav, aside'),
+    );
     if (elements.length === 0) continue;
 
     selectorStrategy = strategy.name;

@@ -128,12 +128,12 @@ test('page extraction → analysis → migration → continued Gemini chat', asy
   await shot(panel, '1-home');
 
   // Phase 2: extract from the page; the service worker persists the transcript.
-  await panel.getByRole('button', { name: 'Analyze conversation' }).click();
+  await panel.getByRole('button', { name: 'Get this chat' }).click();
   const report = panel.getByTestId('extraction-report');
   await expect(report).toBeVisible();
   await expect(panel.getByTestId('transcript-count')).toHaveText('4');
-  await expect(report.getByText('Page (DOM)')).toBeVisible();
-  await expect(report.getByText('completeness: unknown')).toBeVisible();
+  await expect(report).toContainText('read from the page');
+  await expect(report).toContainText('check nothing is missing');
 
   // Phase 3: the local context pass ran automatically and cites evidence.
   const profile = panel.getByTestId('context-profile');
@@ -154,22 +154,22 @@ test('page extraction → analysis → migration → continued Gemini chat', asy
   // Back to the transcript via the library, then plan the migration.
   await panel.getByRole('button', { name: 'Home' }).click();
   await panel.getByTestId('library').getByRole('button').first().click();
-  await panel.getByRole('button', { name: 'Prepare migration' }).click();
-  const preview = panel.getByTestId('plan-preview');
-  await expect(preview.getByText('fits', { exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'Continue in Gemini →' }).click();
+  await expect(panel.getByTestId('plan-ready')).toBeVisible();
   await expect(panel.getByTestId('plan-included')).toHaveText('4');
 
   // Over budget, Full History refuses instead of truncating.
+  await panel.getByTestId('plan-preview').getByText('Advanced', { exact: true }).click();
   await panel.getByTestId('budget').fill('1000');
   await expect(panel.getByTestId('plan-problem').first()).toContainText('never truncates');
   await panel.getByTestId('budget').fill('200000');
   await shot(panel, '3-preview');
 
   const before = gemini.requests.length;
-  await expect(panel.getByRole('button', { name: 'Start migration' })).toBeDisabled(); // consent not given yet
+  await expect(panel.getByRole('button', { name: 'Start Gemini chat' })).toBeDisabled(); // consent not given yet
   expect(gemini.requests.length).toBe(before);
   await panel.getByTestId('consent-check').last().check();
-  await panel.getByRole('button', { name: 'Start migration' }).click();
+  await panel.getByRole('button', { name: 'Start Gemini chat' }).click();
 
   // Continued chat, clearly labelled as an API chat.
   await expect(panel.getByTestId('destination-banner')).toContainText(
@@ -201,8 +201,8 @@ test('page extraction → analysis → migration → continued Gemini chat', asy
   // The session survives closing the panel: reopen and find it in the library.
   await panel.close();
   const { panel: again } = await openPanel(context, extensionId);
-  await again.getByText('Continued chats').waitFor();
-  await again.getByRole('button', { name: /gemini-test-pro · 2 new turn/ }).click();
+  await again.getByText('Your Gemini chats').waitFor();
+  await again.getByRole('button', { name: /2 new message\(s\) · gemini-test-pro/ }).click();
   await expect(again.getByTestId('chat-turns')).toContainText('rate limiting next?');
 });
 
@@ -211,35 +211,38 @@ test('export import → complete transcript with branches and custom instruction
   extensionId,
 }) => {
   const { panel } = await openPanel(context, extensionId);
-  await panel.getByRole('button', { name: 'Choose export file…' }).click();
+  await panel.getByText('Other ways to get this chat').click();
+  await panel.getByRole('button', { name: 'Import from export file' }).click();
   await panel.getByTestId('import-file').setInputFiles(EXPORT_PATH);
   await expect(panel.getByTestId('export-list').getByRole('button')).toHaveCount(3);
   await panel.getByRole('button', { name: /SENTINEL_TITLE_A/ }).click();
 
   const report = panel.getByTestId('extraction-report');
-  await expect(report.getByText('Export file')).toBeVisible();
-  await expect(report.getByText('completeness: complete', { exact: true })).toBeVisible();
+  await expect(report).toContainText('Whole chat, from your export file');
   await expect(panel.getByTestId('transcript-count')).toHaveText('9');
-  await expect(report.getByText(/2 excluded item/)).toBeVisible();
+  await report.getByText('Technical details').click();
+  await expect(report.locator('li', { hasText: 'not transferred' })).toHaveCount(2);
   await expect(
     panel.getByTestId('context-profile').getByText(/SENTINEL_INSTRUCTIONS Be concise/),
   ).toBeVisible();
 
   // Smart mode needs no API key for the web package path.
-  await panel.getByRole('button', { name: 'Prepare migration' }).click();
-  await panel.getByLabel(/Smart/).check();
+  await panel.getByRole('button', { name: 'Continue in Gemini →' }).click();
+  await panel.getByLabel(/Summary only/).check();
   await expect(panel.getByTestId('plan-included')).toHaveText('0');
-  await expect(panel.getByRole('button', { name: 'Copy migration package' })).toBeEnabled();
+  await expect(
+    panel.getByRole('button', { name: 'Copy and open gemini.google.com' }),
+  ).toBeEnabled();
 
   await panel.getByRole('button', { name: 'Settings' }).click();
   await panel.getByRole('button', { name: 'Delete all ChatBridge data…' }).click();
   await panel.getByRole('button', { name: 'Delete everything' }).click();
   await expect(panel.getByRole('button', { name: 'All data deleted' })).toBeDisabled();
   await panel.getByRole('button', { name: 'Home' }).click();
-  await expect(panel.getByText('Nothing extracted yet.')).toBeVisible();
+  await expect(panel.getByText(/Nothing saved yet/)).toBeVisible();
 });
 
-test('the unofficial endpoint is hidden until enabled, then extracts with consent', async ({
+test('one-click is off until the user consents, then gets the whole chat', async ({
   context,
   extensionId,
 }) => {
@@ -252,18 +255,31 @@ test('the unofficial endpoint is hidden until enabled, then extracts with consen
   );
 
   const { panel } = await openPanel(context, extensionId);
-  await expect(panel.getByText('Advanced · unofficial endpoint')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Read it from the page' })).toHaveCount(0);
 
+  await panel.getByRole('button', { name: 'Turn on one-click…' }).click();
+  const turnOn = panel.getByRole('button', { name: 'Turn on one-click' });
+  await expect(turnOn).toBeDisabled();
+  await panel.getByTestId('consent-check').check();
+  await turnOn.click();
+  await expect(panel.getByText(/Tip: get the whole chat/)).toHaveCount(0);
+
+  await panel.getByRole('button', { name: 'Get this chat' }).click();
+  const report = panel.getByTestId('extraction-report');
+  await expect(report).toContainText('got with one-click');
+  await expect(panel.getByTestId('transcript-count')).toHaveText('9');
+});
+
+test('when one-click fails, the page is read instead', async ({ context, extensionId }) => {
+  await context.route('https://chatgpt.com/api/auth/session', (r) =>
+    r.fulfill({ status: 500, body: 'down' }),
+  );
+  const { panel } = await openPanel(context, extensionId);
   await panel.getByRole('button', { name: 'Settings' }).click();
   await panel.getByTestId('endpoint-toggle').check();
   await panel.getByRole('button', { name: 'Home' }).click();
-  await panel.getByText('Advanced · unofficial endpoint').click();
-  const extract = panel.getByRole('button', { name: 'Extract via internal endpoint' });
-  await expect(extract).toBeDisabled();
-  await panel.getByTestId('consent-check').check();
-  await extract.click();
 
-  const report = panel.getByTestId('extraction-report');
-  await expect(report.getByText('Internal endpoint · unofficial')).toBeVisible();
-  await expect(panel.getByTestId('transcript-count')).toHaveText('9');
+  await panel.getByRole('button', { name: 'Get this chat' }).click();
+  await expect(panel.getByTestId('extraction-report')).toContainText('read from the page');
+  await expect(panel.getByTestId('transcript-count')).toHaveText('4');
 });

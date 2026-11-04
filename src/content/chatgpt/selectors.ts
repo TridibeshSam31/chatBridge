@@ -6,9 +6,9 @@
  * and its name is reported, so breakage shows up as "no strategy matched" rather
  * than as a silently empty result.
  *
- * Not yet verified against a live session: on one real account (Nov 2026) the
- * first two strategies matched nothing, so later ones cover other known shapes.
- * Run Diagnostics → Page structure to confirm which one matches.
+ * The first strategy matches the layout seen on a real account in Nov 2026 (from
+ * a structure-only Diagnostics report); the others cover older layouts. Run
+ * Diagnostics → Page structure to see which one matches.
  */
 
 export interface MessageSelectorStrategy {
@@ -21,7 +21,31 @@ export interface MessageSelectorStrategy {
   id: (el: Element) => string | null;
 }
 
+const UNIT_ROLE = /:(user|assistant|system|tool)$/;
+
+const messageIdOf = (el: Element): string | null =>
+  el.getAttribute('data-chatgpt-search-message-ids') ??
+  el
+    .querySelector('[data-chatgpt-search-message-ids]')
+    ?.getAttribute('data-chatgpt-search-message-ids') ??
+  el
+    .querySelector('[data-chatgpt-selection-message-id]')
+    ?.getAttribute('data-chatgpt-selection-message-id') ??
+  null;
+
 export const MESSAGE_STRATEGIES: readonly MessageSelectorStrategy[] = [
+  {
+    // Layout seen on a real account (Nov 2026): one search unit per message, keyed
+    // "<turn>:<n>:<role>", holding the message content and its ids. Not
+    // [data-conversation-role]: there it marks the hidden "You said:" label.
+    name: 'search-unit',
+    message: '[data-chatgpt-search-unit-key]',
+    role: (el) =>
+      UNIT_ROLE.exec(el.getAttribute('data-chatgpt-search-unit-key') ?? '')?.[1] ??
+      el.closest('[data-conversation-role]')?.getAttribute('data-conversation-role') ??
+      null,
+    id: (el) => messageIdOf(el) ?? el.getAttribute('data-chatgpt-search-unit-key'),
+  },
   {
     name: 'data-message-author-role',
     message: '[data-message-author-role]',
@@ -67,10 +91,15 @@ export const sidebarLinkFor = (conversationId: string): string =>
 /** document.title values that mean "no real conversation title". */
 export const GENERIC_TITLES = new Set(['chatgpt', 'new chat']);
 
-/** Rendered markdown of an assistant message. */
-export const ASSISTANT_MARKDOWN = '.markdown';
-/** Plain-text body of a user message. */
-export const USER_TEXT = '.whitespace-pre-wrap';
+/** Rendered markdown of an assistant message (newer layout first). */
+export const ASSISTANT_MARKDOWN = '[data-markdown-text-style="assistant-message"], .markdown';
+/** Plain-text body of a user message (newer layout first). */
+export const USER_TEXT = '[data-user-message-bubble], .whitespace-pre-wrap';
+/** Page chrome inside a message that is not its content: buttons, hidden screen-reader labels. */
+export const COPY_EXCLUDED = '[data-markdown-copy="exclude"], .sr-only';
+/** A code block container, and the element holding its source in the newer layout. */
+export const CODE_BLOCK = '[data-code-block="true"]';
+export const CODE_SOURCE = '[data-code-block-source]';
 /** Present while a response is still streaming. */
 export const STOP_GENERATING = '[data-testid="stop-button"]';
 /** Branch pager text, e.g. "2/3", rendered as a leaf element inside a turn. */
@@ -78,6 +107,6 @@ export const PAGER_TEXT = /^\s*(\d+)\s*\/\s*(\d+)\s*$/;
 /** Short language labels in code-block headers. */
 export const LANGUAGE_LABEL = /^[A-Za-z][A-Za-z0-9+#. -]{0,19}$/;
 /** The container of one turn, used for turn numbers and branch pagers. */
-export const TURN_CONTAINER = '[data-testid^="conversation-turn-"], article';
+export const TURN_CONTAINER = '[data-turn-key], [data-testid^="conversation-turn-"], article';
 /** Extracts the turn number from a turn container's data-testid. */
 export const TURN_NUMBER = /conversation-turn-(\d+)$/;

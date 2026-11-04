@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { Session } from '../../core/migration/session';
 import { listTranscripts } from '../../storage/db';
-import { CompletenessBadge, ErrorBox, MethodBadge } from '../components/ui';
+import { Badge, ErrorBox, sourceSummary } from '../components/ui';
 import type { Navigate } from '../routes';
 import { listSessions } from '../services';
 
 type Transcripts = Awaited<ReturnType<typeof listTranscripts>>;
 
-/** Everything stored locally: extracted transcripts and continued chats. */
+const when = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** Everything stored locally: chats ChatBridge got, and chats continued in Gemini. */
 export function Library({ navigate }: { navigate: Navigate }) {
   const [transcripts, setTranscripts] = useState<Transcripts | null>(null);
   const [sessions, setSessions] = useState<
@@ -35,7 +38,8 @@ export function Library({ navigate }: { navigate: Navigate }) {
     <div className="stack">
       {sessions.length > 0 && (
         <section className="card">
-          <h2>Continued chats</h2>
+          <h2>Your Gemini chats</h2>
+          <p className="muted small">Pick up where you left off.</p>
           <ul className="list">
             {sessions.map(({ id, createdAt, session }) => (
               <li key={id}>
@@ -43,10 +47,9 @@ export function Library({ navigate }: { navigate: Navigate }) {
                   className="list-item"
                   onClick={() => navigate({ name: 'chat', sessionId: id })}
                 >
-                  <span className="list-title">{session.title ?? 'Untitled conversation'}</span>
+                  <span className="list-title">{session.title ?? 'Untitled chat'}</span>
                   <span className="muted small">
-                    {session.model} · {session.turns.length} new turn(s) ·{' '}
-                    {new Date(createdAt).toLocaleString()}
+                    {session.turns.length} new message(s) · {session.model} · {when(createdAt)}
                   </span>
                 </button>
               </li>
@@ -55,30 +58,38 @@ export function Library({ navigate }: { navigate: Navigate }) {
         </section>
       )}
       <section className="card">
-        <h2>Saved transcripts</h2>
+        <h2>Saved ChatGPT chats</h2>
         {transcripts.length === 0 ? (
           <p className="muted small">
-            Nothing extracted yet. Transcripts stay on this device until you delete them.
+            Nothing saved yet. Chats you get stay on this device until you delete them.
           </p>
         ) : (
           <ul className="list" data-testid="library">
-            {transcripts.map((t) => (
-              <li key={t.id}>
-                <button
-                  className="list-item"
-                  onClick={() => navigate({ name: 'transcript', id: t.id })}
-                >
-                  <span className="list-title">{t.title ?? 'Untitled conversation'}</span>
-                  <span className="row small">
-                    <MethodBadge method={t.method} />
-                    <CompletenessBadge value={t.completeness} />
-                    <span className="muted">
-                      {t.messageCount} messages · {new Date(t.createdAt).toLocaleString()}
+            {transcripts.map((t) => {
+              const source = sourceSummary(t.method, t.completeness);
+              return (
+                <li key={t.id}>
+                  <button
+                    className="list-item"
+                    onClick={() => navigate({ name: 'transcript', id: t.id })}
+                  >
+                    <span className="list-title">{t.title ?? 'Untitled chat'}</span>
+                    <span className="row small">
+                      <Badge tone={source.tone}>
+                        {source.tone === 'good'
+                          ? 'Complete'
+                          : source.tone === 'bad'
+                            ? 'Incomplete'
+                            : 'From page'}
+                      </Badge>
+                      <span className="muted">
+                        {t.messageCount} messages · {when(t.createdAt)}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

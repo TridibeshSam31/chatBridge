@@ -37,16 +37,16 @@ consent box that says exactly what will be sent, and to whom.
 
 ## Status
 
-| Phase                                                           | State                                               |
-| --------------------------------------------------------------- | --------------------------------------------------- |
-| 0 · Architecture                                                | Done — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| 1 · Extension foundation                                        | Done                                                |
-| 2 · Extraction (DOM, export, endpoint), schema, local storage   | Done                                                |
-| 3 · Context intelligence (rules + Gemini, evidence-checked)     | Done                                                |
-| 4 · Gemini integration (modes, mapping, streaming chat)         | Done                                                |
-| 5 · Budgets, summaries, checkpoints/resume, deletion, hardening | Done                                                |
-| 6 · Docs, screenshots                                           | Done                                                |
-| **ChatGPT page selectors validated against a real account**     | **Pending** — see [First run](#first-run)           |
+| Phase                                                           | State                                                                                              |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 0 · Architecture                                                | Done — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                                                |
+| 1 · Extension foundation                                        | Done                                                                                               |
+| 2 · Extraction (DOM, export, endpoint), schema, local storage   | Done                                                                                               |
+| 3 · Context intelligence (rules + Gemini, evidence-checked)     | Done                                                                                               |
+| 4 · Gemini integration (modes, mapping, streaming chat)         | Done                                                                                               |
+| 5 · Budgets, summaries, checkpoints/resume, deletion, hardening | Done                                                                                               |
+| 6 · Docs, screenshots                                           | Done                                                                                               |
+| **ChatGPT page selectors validated against a real account**     | **Partly** — rebuilt from a real Diagnostics report (Nov 2026); extraction not yet confirmed there |
 
 Everything is tested against fixtures and a stand-in for the Gemini API (see [Testing](#testing)).
 Two things have **not** been verified: the ChatGPT page structure on a real logged-in account, and
@@ -123,8 +123,10 @@ more per turn.
 
 ## Known limitations
 
-- **ChatGPT page selectors are unvalidated on a real account** (see [First run](#first-run)). If ChatGPT
-  changes its layout, page extraction reports "no messages found"; the export always works.
+- **ChatGPT page selectors** match the layout in one real account's Diagnostics report (Nov 2026). If
+  ChatGPT changes its layout again, page extraction reports "no messages found"; the export always works.
+- ChatGPT keeps only a few turns of a long chat on the page at a time (5 in that report), so page
+  extraction must scroll. For a whole chat in one step, use the internal endpoint or the export.
 - Page extraction captures only the branch on screen; the export captures all of them.
 - Images and files are not transferred (ChatGPT file pointers can't be fetched); they appear as
   labelled placeholders. The other assistant's internal reasoning and ChatGPT memory are not transferred.

@@ -82,7 +82,7 @@ export function App() {
       <main className="main">
         {route.name !== 'home' && route.name !== 'settings' && route.name !== 'diagnostics' && (
           <button className="link back" onClick={() => navigate({ name: 'home' })}>
-            ← Home
+            ← Back to start
           </button>
         )}
         {route.name === 'home' && (
@@ -92,6 +92,7 @@ export function App() {
               onRefresh={() => void refresh()}
               navigate={navigate}
               endpointEnabled={settings?.endpointEnabled ?? false}
+              onSettingsChanged={setSettings}
             />
             <Library navigate={navigate} />
           </div>

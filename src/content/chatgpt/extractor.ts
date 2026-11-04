@@ -9,8 +9,8 @@ import {
 } from '../../core/conversation/schema';
 import { hashString } from '../../shared/hash';
 import { readTitle } from './adapter';
-import { findScrollContainer, settleDom } from './diagnostics/dom-probe';
-import { elementToBlocks } from './dom-to-blocks';
+import { findScrollContainer } from './diagnostics/dom-probe';
+import { elementToBlocks, textWithoutChrome } from './dom-to-blocks';
 import {
   ASSISTANT_MARKDOWN,
   MESSAGE_STRATEGIES,
@@ -36,7 +36,6 @@ interface Collected {
   key: string;
   hasId: boolean;
   turn: number | null;
-  seq: number;
   role: Role;
   content: ContentBlock[];
   pager: { index: number; count: number } | null;
@@ -73,11 +72,17 @@ export async function extractFromDom(
   }
 
   const collected = new Map<string, Collected>();
-  let seq = 0;
-  const collect = () => {
+  // Page order of every message seen so far. Collection starts wherever the user
+  // is looking, so new messages are placed relative to ones already known
+  // rather than in the order they were discovered.
+  const order: string[] = [];
+  const collect = (direction: 'up' | 'down' = 'up'): number => {
+    const before = collected.size;
     const elements = Array.from(root.querySelectorAll(strategy.message)).filter(
       (el) => !el.closest('nav, aside'),
     );
+    let anchor: number | null = null; // index in `order` of the last known message in this pass
+    const pending: string[] = []; // new messages seen before the first known one
     elements.forEach((el, index) => {
       const id = strategy.id(el);
       const turnEl = el.closest(TURN_CONTAINER);
@@ -85,17 +90,33 @@ export async function extractFromDom(
       const turn = turnMatch ? Number(turnMatch[1]) : null;
       // Without ids, fall back to turn number (stable across scrolling) or DOM position.
       const key = id ?? (turn !== null ? `turn-${turn}-${index}` : `pos-${index}`);
-      if (collected.has(key)) return;
+      if (collected.has(key)) {
+        let at = order.indexOf(key);
+        if (anchor === null) {
+          // Messages seen before the first known one belong right before it.
+          order.splice(at, 0, ...pending);
+          at += pending.length;
+        }
+        anchor = at;
+        return;
+      }
       collected.set(key, {
         key,
         hasId: id !== null,
         turn,
-        seq: seq++,
         role: mapRole(strategy.role(el)),
         content: messageBlocks(el, strategy.role(el)),
         pager: readPager(turnEl ?? el),
       });
+      if (anchor === null) pending.push(key);
+      else order.splice(++anchor, 0, key);
     });
+    // No known message on screen: older ones load above, newer ones below.
+    if (anchor === null) {
+      if (direction === 'up') order.unshift(...pending);
+      else order.push(...pending);
+    }
+    return collected.size - before;
   };
 
   const warnings: ExtractionWarning[] = [];
@@ -103,16 +124,33 @@ export async function extractFromDom(
   collect();
 
   let scrolled = false;
+  let incomplete = false;
   if (options.scroll) {
     const first = root.querySelector(strategy.message);
     const container = first ? findScrollContainer(first) : null;
     if (container) {
       scrolled = true;
-      await scrollCollect(container, options.settle ?? settleDom, collect);
+      const outcome = await scrollCollect(container, options.settle ?? settleScroll, collect);
+      if (!outcome.reachedTop || !outcome.reachedBottom) {
+        incomplete = true;
+        const where = !outcome.reachedTop
+          ? !outcome.reachedBottom
+            ? 'the start or the end'
+            : 'the start'
+          : 'the end';
+        reasons.push(
+          `Scrolling did not reach ${where} of the chat${outcome.timedOut ? ' within 5 minutes' : ''}, so messages are missing.`,
+        );
+        warnings.push({
+          code: 'SCROLL_INCOMPLETE',
+          message: `Could not scroll to ${where} of the chat${outcome.timedOut ? ' in time' : ''}; some messages are missing. Use the one-click method or the export file for the whole chat.`,
+        });
+      }
     } else {
       warnings.push({
         code: 'NO_SCROLL_CONTAINER',
-        message: 'Could not find the scrolling area; extracted what is currently rendered.',
+        message:
+          'Nothing to scroll: the chat fits on screen, or its scrolling area was not found. Read what is on the page.',
       });
     }
   }
@@ -122,9 +160,12 @@ export async function extractFromDom(
     );
   }
 
-  const items = [...collected.values()];
+  const position = new Map(order.map((key, i) => [key, i]));
+  const items = order.map((key) => collected.get(key)!);
   const allTurns = items.every((i) => i.turn !== null);
-  items.sort((a, b) => (allTurns ? a.turn! - b.turn! || a.seq - b.seq : a.seq - b.seq));
+  if (allTurns) {
+    items.sort((a, b) => a.turn! - b.turn! || position.get(a.key)! - position.get(b.key)!);
+  }
 
   if (items.some((i) => !i.hasId)) {
     warnings.push({
@@ -173,6 +214,20 @@ export async function extractFromDom(
       messageIds: empty.map((m) => m.id),
     });
   }
+  // Many messages with the same text means the selectors hit labels, not content.
+  const byText = new Map<string, number>();
+  for (const m of messages) {
+    const t = messageText(m).trim();
+    if (t) byText.set(t, (byText.get(t) ?? 0) + 1);
+  }
+  const repeated = Math.max(0, ...byText.values());
+  if (messages.length >= 4 && repeated >= messages.length / 2) {
+    reasons.push('Most messages have identical text, so the page was probably not read correctly.');
+    warnings.push({
+      code: 'SUSPICIOUS_CONTENT',
+      message: `${repeated} of ${messages.length} messages have identical text. ChatGPT's layout may have changed: run Diagnostics, and use the internal endpoint or the export meanwhile.`,
+    });
+  }
 
   return ConversationSchema.parse({
     schemaVersion: 1,
@@ -184,7 +239,7 @@ export async function extractFromDom(
     userContext: [],
     extraction: {
       method: 'dom',
-      completeness: 'unknown',
+      completeness: incomplete ? 'partial' : 'unknown',
       completenessReasons: reasons,
       extractedAt: new Date().toISOString(),
       warnings,
@@ -209,13 +264,17 @@ function messageBlocks(el: Element, role: string | null): ContentBlock[] {
   }));
   if (role === 'user') {
     const body = el.querySelector(USER_TEXT);
-    const text = (body ?? el).textContent?.trim() ?? '';
+    const text = textWithoutChrome(body ?? el).trim();
     return [
       ...images,
       ...(text ? [{ type: 'text' as const, text, format: 'plain' as const }] : []),
     ];
   }
-  const parts = Array.from(el.querySelectorAll(ASSISTANT_MARKDOWN));
+  // Outermost matches only: both selectors can match nested elements of one reply.
+  const parts = Array.from(el.querySelectorAll(ASSISTANT_MARKDOWN)).filter((part) => {
+    const outer = part.parentElement?.closest(ASSISTANT_MARKDOWN);
+    return !outer || !el.contains(outer);
+  });
   if (parts.length === 0) return elementToBlocks(el);
   return parts.flatMap((part) => elementToBlocks(part));
 }
@@ -229,30 +288,82 @@ function readPager(turn: Element): { index: number; count: number } | null {
   return null;
 }
 
+export interface ScrollOutcome {
+  reachedTop: boolean;
+  reachedBottom: boolean;
+  timedOut: boolean;
+}
+
+export const SCROLL_DEADLINE_MS = 5 * 60_000;
+
+/**
+ * Scrolls to the top (where older messages load), then down to the bottom,
+ * collecting after every step. Reports whether both ends were actually reached,
+ * so a cut-short scroll is never mistaken for a full one.
+ */
 async function scrollCollect(
   container: HTMLElement,
   settle: (el: Element) => Promise<void>,
-  collect: () => void,
-): Promise<void> {
+  collect: (direction: 'up' | 'down') => number,
+): Promise<ScrollOutcome> {
   const original = container.scrollTop;
-  const deadline = Date.now() + 120_000;
+  const deadline = Date.now() + SCROLL_DEADLINE_MS;
+  const atTop = () => container.scrollTop <= 2;
+  const atBottom = () => container.scrollTop + container.clientHeight >= container.scrollHeight - 2;
+  let reachedTop = false;
+  let reachedBottom = false;
   try {
-    for (let round = 0; round < 30 && Date.now() < deadline; round++) {
-      const before = container.scrollHeight;
+    // Older messages may load in batches at the top: keep going until the
+    // height and the set of collected messages both stop growing.
+    for (let round = 0; round < 60 && Date.now() < deadline; round++) {
+      const height = container.scrollHeight;
       container.scrollTop = 0;
       await settle(container);
-      collect();
-      if (container.scrollHeight <= before) break;
+      const added = collect('up');
+      reachedTop = atTop();
+      if (container.scrollHeight <= height && added === 0 && reachedTop) break;
     }
-    for (let steps = 0; steps < 1000 && Date.now() < deadline; steps++) {
-      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 2) break;
+    for (let steps = 0; steps < 5000 && Date.now() < deadline; steps++) {
+      if (atBottom()) {
+        reachedBottom = true;
+        break;
+      }
       const previous = container.scrollTop;
-      container.scrollTop += Math.max(200, container.clientHeight * 0.8);
+      container.scrollTop += Math.max(200, container.clientHeight * 0.9);
       await settle(container);
-      collect();
-      if (container.scrollTop === previous) break;
+      collect('down');
+      if (container.scrollTop === previous) {
+        reachedBottom = atBottom();
+        break;
+      }
     }
+    if (!reachedBottom) reachedBottom = atBottom();
   } finally {
     container.scrollTop = original;
   }
+  return { reachedTop, reachedBottom, timedOut: Date.now() >= deadline };
+}
+
+/**
+ * Waits until no new elements have been added for 250 ms (max 1.5 s). Attribute
+ * and text churn (syntax highlighting, animations) is ignored, so a busy page
+ * does not make every step wait for the maximum.
+ */
+export function settleScroll(container: Element): Promise<void> {
+  return new Promise((resolve) => {
+    let quiet = setTimeout(done, 250);
+    const hardStop = setTimeout(done, 1500);
+    const observer = new MutationObserver((records) => {
+      if (!records.some((r) => Array.from(r.addedNodes).some((n) => n.nodeType === 1))) return;
+      clearTimeout(quiet);
+      quiet = setTimeout(done, 250);
+    });
+    function done() {
+      clearTimeout(quiet);
+      clearTimeout(hardStop);
+      observer.disconnect();
+      resolve();
+    }
+    observer.observe(container, { childList: true, subtree: true });
+  });
 }

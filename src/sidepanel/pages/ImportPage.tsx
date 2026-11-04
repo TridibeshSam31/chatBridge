@@ -25,10 +25,11 @@ export function ImportPage({ navigate }: { navigate: Navigate }) {
   return (
     <div className="stack">
       <section className="card">
-        <h2>Import from ChatGPT export</h2>
+        <h2>Import from your ChatGPT export</h2>
         <p className="muted small">
-          Choose the export <code>.zip</code> or the <code>conversations.json</code> inside it. Only
-          the conversation data is read, locally in this panel. Nothing is uploaded.
+          Get it in ChatGPT → Settings → Data controls → Export data (it arrives by email). Choose
+          the <code>.zip</code>, or the <code>conversations.json</code> inside it. It is read on
+          this device only.
         </p>
         <input
           type="file"
@@ -46,7 +47,7 @@ export function ImportPage({ navigate }: { navigate: Navigate }) {
 
       {file.value && (
         <section className="card">
-          <h2>{file.value.entries.length} conversations</h2>
+          <h2>Pick a chat ({file.value.entries.length})</h2>
           <input
             className="input"
             placeholder="Search by title"
@@ -65,8 +66,7 @@ export function ImportPage({ navigate }: { navigate: Navigate }) {
                 >
                   <span className="list-title">{e.title ?? 'Untitled conversation'}</span>
                   <span className="muted small">
-                    {e.updatedAt ? new Date(e.updatedAt).toLocaleDateString() : 'no date'} ·{' '}
-                    {e.nodeCount} nodes
+                    {e.updatedAt ? new Date(e.updatedAt).toLocaleDateString() : 'no date'}
                   </span>
                 </button>
               </li>

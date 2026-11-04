@@ -33,6 +33,76 @@ export function CompletenessBadge({ value }: { value: string }) {
   );
 }
 
+const STEPS = ['Get chat', 'Review', 'Continue in Gemini'] as const;
+
+/** Where the user is in the three-step flow. */
+export function Stepper({ current }: { current: 1 | 2 | 3 }) {
+  return (
+    <ol className="stepper" aria-label="Progress">
+      {STEPS.map((label, i) => {
+        const n = i + 1;
+        const state = n < current ? 'done' : n === current ? 'current' : 'todo';
+        return (
+          <li
+            key={label}
+            className={`step step-${state}`}
+            aria-current={state === 'current' ? 'step' : undefined}
+          >
+            <span className="step-dot">{state === 'done' ? '✓' : n}</span>
+            <span className="step-label">{label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** A highlighted note: success, a caution, or a tip. */
+export function Callout({
+  tone = 'info',
+  title,
+  children,
+  testId,
+}: {
+  tone?: 'good' | 'warn' | 'info' | 'bad';
+  title?: ReactNode;
+  children?: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div
+      className={`callout callout-${tone}`}
+      data-testid={testId}
+      role={tone === 'bad' ? 'alert' : undefined}
+    >
+      {title && <p className="callout-title">{title}</p>}
+      {children}
+    </div>
+  );
+}
+
+export function Spinner() {
+  return <span className="spinner" aria-hidden="true" />;
+}
+
+/** Plain-language summary of how a transcript was obtained and how complete it is. */
+export function sourceSummary(
+  method: string,
+  completeness: string,
+): {
+  tone: 'good' | 'warn' | 'bad';
+  label: string;
+} {
+  if (completeness === 'complete')
+    return {
+      tone: 'good',
+      label: method === 'export' ? 'Whole chat, from your export file' : 'Whole chat',
+    };
+  if (completeness === 'partial')
+    return { tone: 'bad', label: 'Incomplete — some messages are missing' };
+  return { tone: 'warn', label: 'Read from the page — check nothing is missing' };
+}
+
 export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
   return (

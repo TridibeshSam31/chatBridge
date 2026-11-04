@@ -1,5 +1,11 @@
 import { bump, type Histogram, shapeOf, urlShape } from '../../../shared/redact';
-import { MESSAGE_STRATEGIES, sidebarLinkFor, GENERIC_TITLES, TURN_CONTAINER } from '../selectors';
+import {
+  MESSAGE_STRATEGIES,
+  sidebarLinkFor,
+  GENERIC_TITLES,
+  TURN_CONTAINER,
+  CODE_BLOCK,
+} from '../selectors';
 import { parseConversationId } from '../url';
 
 /**
@@ -42,7 +48,7 @@ export interface ScrollTestResult {
 
 export interface DomProbeReport {
   kind: 'dom-probe';
-  probeVersion: 1;
+  probeVersion: 2;
   path: string;
   hasConversationId: boolean;
   page: { documentTitleIsGeneric: boolean; sidebarLinkFound: boolean; mainElementFound: boolean };
@@ -146,9 +152,14 @@ export async function probeDom(
     return result;
   });
 
-  const messages = Array.from(root.querySelectorAll('[data-message-author-role]')).filter(inScope);
-  const byRole = (role: string) =>
-    messages.filter((m) => m.getAttribute('data-message-author-role') === role);
+  // Samples come from whichever strategy matches, as extraction would use it.
+  const matched = MESSAGE_STRATEGIES.find((st) =>
+    Array.from(root.querySelectorAll(st.message)).some(inScope),
+  );
+  const messages = matched
+    ? Array.from(root.querySelectorAll(matched.message)).filter(inScope)
+    : [];
+  const byRole = (role: string) => messages.filter((m) => matched?.role(m) === role);
   const turnOf = (el: Element) => el.closest(TURN_CONTAINER) ?? el;
   const firstWith = (els: Element[], selector: string) =>
     els.find((el) => el.querySelector(selector));
@@ -222,7 +233,7 @@ export async function probeDom(
 
   return {
     kind: 'dom-probe',
-    probeVersion: 1,
+    probeVersion: 2,
     path: urlShape(url).replace(/^https?:\/\/[^/]+/, ''),
     hasConversationId: conversationId !== null,
     page: {
@@ -256,12 +267,10 @@ export async function probeDom(
     samples: {
       user: sampleOf(users.find((u) => !u.querySelector('img'))),
       userWithImage: sampleOf(firstWith(users, 'img')),
-      assistant: sampleOf(assistants.find((a) => !a.querySelector('pre'))),
-      assistantWithCode: sampleOf(firstWith(assistants, 'pre')),
+      assistant: sampleOf(assistants.find((a) => !a.querySelector(`pre, ${CODE_BLOCK}`))),
+      assistantWithCode: sampleOf(firstWith(assistants, `pre, ${CODE_BLOCK}`)),
       otherRole: sampleOf(
-        messages.find(
-          (m) => !['user', 'assistant'].includes(m.getAttribute('data-message-author-role') ?? ''),
-        ),
+        messages.find((m) => !['user', 'assistant'].includes(matched?.role(m) ?? '')),
       ),
     },
   };

@@ -26,7 +26,7 @@ const CONTENT_WORDS = [
 describe('probeDom', () => {
   it('reports selector strategies against the fixture', async () => {
     const report = await probeDom(docFrom(fixture), URL_, { scrollTest: false });
-    expect(report.strategies[0]).toEqual({
+    expect(report.strategies.find((st) => st.name === 'data-message-author-role')).toEqual({
       name: 'data-message-author-role',
       matches: 4,
       withId: 4,
@@ -57,7 +57,7 @@ describe('probeDom', () => {
     doc.querySelector('nav')!.innerHTML +=
       '<div data-message-author-role="user" data-message-id="leak">Sidebar SECRET</div>';
     const report = await probeDom(doc, URL_, { scrollTest: false });
-    expect(report.strategies[0]!.matches).toBe(4);
+    expect(report.strategies.find((st) => st.name === 'data-message-author-role')!.matches).toBe(4);
     expect(JSON.stringify(report)).not.toContain('SECRET');
   });
 

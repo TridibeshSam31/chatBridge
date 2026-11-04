@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { type Settings, updateSettings } from '../../storage/settings';
 import type { PanelState } from '../App';
-import { Consent, ErrorBox, useAsync } from '../components/ui';
+import { Callout, Consent, ErrorBox, Spinner, Stepper, useAsync } from '../components/ui';
 import type { Navigate } from '../routes';
 import { extractFromTab } from '../services';
 
@@ -9,57 +10,84 @@ interface Props {
   onRefresh: () => void;
   navigate: Navigate;
   endpointEnabled: boolean;
+  onSettingsChanged?: (s: Settings) => void;
 }
 
-export function HomePage({ state, onRefresh, navigate, endpointEnabled }: Props) {
+export function HomePage(props: Props) {
+  const onChatGpt = props.state.kind === 'detected' && props.state.conversation.conversationId;
   return (
     <div className="stack">
-      <SourceCard
-        state={state}
-        onRefresh={onRefresh}
-        navigate={navigate}
-        endpointEnabled={endpointEnabled}
-      />
-      <section className="card">
-        <h2>Import from a ChatGPT data export</h2>
-        <p className="muted small">
-          The most complete method: includes every branch, custom instructions and timestamps.
-          Request it in ChatGPT → Settings → Data controls → Export data. Read locally, never
-          uploaded.
-        </p>
-        <button className="btn" onClick={() => navigate({ name: 'import' })}>
-          Choose export file…
-        </button>
-      </section>
+      <SourceCard {...props} />
+      {!onChatGpt && (
+        <section className="card">
+          <h2>Have a ChatGPT export?</h2>
+          <p className="muted small">
+            Pick any chat from your ChatGPT data export (ChatGPT → Settings → Data controls → Export
+            data). It is read on this device only.
+          </p>
+          <button className="btn" onClick={() => props.navigate({ name: 'import' })}>
+            Choose export file…
+          </button>
+        </section>
+      )}
     </div>
   );
 }
 
-function SourceCard({ state, onRefresh, navigate, endpointEnabled }: Props) {
-  const [scroll, setScroll] = useState(true);
+type Phase = 'endpoint' | 'page';
+
+function SourceCard({ state, onRefresh, navigate, endpointEnabled, onSettingsChanged }: Props) {
   const [extraction, run] = useAsync<string>();
+  const [phase, setPhase] = useState<Phase>('page');
+  const [enabling, setEnabling] = useState(false);
+  const [settingsError, setSettingsError] = useState<unknown>(null);
   const busy = extraction.status === 'running';
 
-  const extract = async (tabId: number, method: 'dom' | 'dom-scroll' | 'endpoint') => {
-    const id = await run(async () => (await extractFromTab(tabId, method)).transcriptId);
+  /**
+   * One button: the one-click method when it is turned on, with an automatic
+   * fall back to reading the page if it fails (it is unofficial and may break).
+   */
+  const getChat = async (tabId: number, method: 'auto' | 'page') => {
+    const id = await run(async () => {
+      if (method === 'auto' && endpointEnabled) {
+        setPhase('endpoint');
+        try {
+          return (await extractFromTab(tabId, 'endpoint')).transcriptId;
+        } catch (err) {
+          console.warn('[ChatBridge] one-click method failed; reading the page instead', err);
+        }
+      }
+      setPhase('page');
+      return (await extractFromTab(tabId, 'dom-scroll')).transcriptId;
+    });
     if (id) navigate({ name: 'transcript', id });
+  };
+
+  const enableOneClick = async () => {
+    try {
+      const next = await updateSettings({ endpointEnabled: true });
+      onSettingsChanged?.(next);
+      setEnabling(false);
+    } catch (err) {
+      setSettingsError(err);
+    }
   };
 
   switch (state.kind) {
     case 'loading':
       return (
-        <p className="muted" role="status">
-          Checking the current tab…
+        <p className="muted status" role="status">
+          <Spinner /> Looking at the current tab…
         </p>
       );
     case 'no-tab':
     case 'not-chatgpt':
       return (
-        <section className="card" data-testid="state-not-chatgpt">
-          <h2>Open a ChatGPT conversation</h2>
+        <section className="card hero" data-testid="state-not-chatgpt">
+          <Stepper current={1} />
+          <h2>Open the ChatGPT chat you want to move</h2>
           <p className="muted">
-            Switch to a tab on chatgpt.com with the conversation you want to move. This panel
-            updates automatically.
+            Go to chatgpt.com and open a chat. This panel picks it up automatically.
           </p>
         </section>
       );
@@ -77,91 +105,113 @@ function SourceCard({ state, onRefresh, navigate, endpointEnabled }: Props) {
       const c = state.conversation;
       if (c.conversationId === null) {
         return (
-          <section className="card" data-testid="state-no-conversation">
-            <h2>No conversation selected</h2>
+          <section className="card hero" data-testid="state-no-conversation">
+            <Stepper current={1} />
+            <h2>Open a saved chat</h2>
             <p className="muted">
-              Open an existing chat from the ChatGPT sidebar. New and temporary chats can’t be
-              migrated until they have a conversation link.
+              Pick a chat from the ChatGPT sidebar. New and temporary chats can’t be moved until
+              they are saved.
             </p>
           </section>
         );
       }
+      const pageUnreadable = c.selectorStrategy === null;
       return (
-        <section className="card" data-testid="state-detected">
-          <p className="eyebrow">Source · ChatGPT</p>
+        <section className="card hero" data-testid="state-detected">
+          <Stepper current={1} />
+          <p className="section-title">This ChatGPT chat</p>
           <h2 className="title" data-testid="conversation-title">
-            {c.title ?? 'Untitled conversation'}
+            {c.title ?? 'Untitled chat'}
           </h2>
-          <dl className="stats">
-            <div>
-              <dt>Rendered messages</dt>
-              <dd data-testid="message-count">{c.renderedMessageCount}</dd>
-            </div>
-            <div>
-              <dt>You</dt>
-              <dd>{c.renderedRoleCounts.user}</dd>
-            </div>
-            <div>
-              <dt>ChatGPT</dt>
-              <dd>{c.renderedRoleCounts.assistant}</dd>
-            </div>
-          </dl>
-          {c.selectorStrategy === null ? (
-            <p className="warn" data-testid="selector-warning">
-              No messages found on the page. The chat may still be loading, or ChatGPT’s layout has
-              changed —{' '}
-              {endpointEnabled
-                ? 'use the internal endpoint below, or the export file.'
-                : 'use the export file, or enable the internal endpoint in Settings.'}
+
+          <button
+            className="btn btn-primary btn-lg"
+            disabled={busy}
+            onClick={() => void getChat(state.tabId, 'auto')}
+          >
+            {busy ? <Spinner /> : null}
+            {busy ? 'Getting the chat…' : 'Get this chat'}
+          </button>
+          {busy ? (
+            <p className="hint" role="status">
+              {phase === 'endpoint'
+                ? 'Getting the whole chat from ChatGPT…'
+                : 'Scrolling through the chat to read every message. Long chats can take a minute — keep this tab open.'}
             </p>
           ) : (
-            <p className="muted small">
-              Counts what the page has rendered so far. Page extraction reports exactly what it
-              captured; it cannot see other branches of edited messages.
+            <p className="hint">
+              {endpointEnabled
+                ? 'Gets the whole chat in one step. Nothing leaves your computer.'
+                : 'ChatBridge scrolls through the chat to read it. Nothing leaves your computer.'}
             </p>
           )}
-          <label className="check">
-            <input type="checkbox" checked={scroll} onChange={(e) => setScroll(e.target.checked)} />
-            <span>Scroll through the whole conversation first (recommended for long chats)</span>
-          </label>
-          <div className="actions">
-            <button
-              className="btn btn-primary"
-              disabled={busy || c.selectorStrategy === null}
-              onClick={() => void extract(state.tabId, scroll ? 'dom-scroll' : 'dom')}
-            >
-              {busy ? 'Extracting…' : 'Analyze conversation'}
-            </button>
-            <button className="btn" onClick={onRefresh} disabled={busy}>
-              Refresh
-            </button>
-          </div>
+
           {extraction.status === 'error' && (
             <>
               <ErrorBox error={extraction.error} />
               <p className="small">
-                Fallback:{' '}
+                You can also{' '}
                 <button className="link" onClick={() => navigate({ name: 'import' })}>
-                  import the export file
-                </button>{' '}
-                instead.
+                  import the chat from your ChatGPT export
+                </button>
+                .
               </p>
             </>
           )}
-          {endpointEnabled && (
-            <details className="advanced" open={c.selectorStrategy === null || undefined}>
-              <summary>Advanced · unofficial endpoint</summary>
-              <Consent
-                to="ChatGPT’s unofficial conversation endpoint"
-                what="ChatBridge will request this conversation from chatgpt.com using your signed-in session, as the ChatGPT web app does. It is unsupported and may stop working. Nothing is sent anywhere else."
-                agreeLabel="I understand and allow this request."
-                actionLabel="Extract via internal endpoint"
-                busy={busy}
-                onConfirm={() => void extract(state.tabId, 'endpoint')}
-              />
-            </details>
+
+          {pageUnreadable && !endpointEnabled && (
+            <Callout
+              tone="warn"
+              title="ChatBridge can’t see the messages on this page"
+              testId="selector-warning"
+            >
+              <p>
+                The chat may still be loading. If this stays, turn on one-click below, or use your
+                export file.
+              </p>
+            </Callout>
           )}
-          <p className="muted small mono">{c.conversationId}</p>
+
+          {!endpointEnabled && (
+            <Callout tone="info" title="Tip: get the whole chat in one click">
+              <p className="small">No scrolling, and nothing gets missed — even very long chats.</p>
+              {enabling ? (
+                <Consent
+                  to="How it works"
+                  what="ChatBridge asks chatgpt.com for this chat the same way the ChatGPT website loads it, using your logged-in session. OpenAI doesn’t officially support this, so it may stop working one day — ChatBridge then reads the page instead. Nothing is sent anywhere else. You can turn it off in Settings."
+                  agreeLabel="I understand. Use this unofficial method."
+                  actionLabel="Turn on one-click"
+                  onConfirm={() => void enableOneClick()}
+                />
+              ) : (
+                <button className="btn" onClick={() => setEnabling(true)}>
+                  Turn on one-click…
+                </button>
+              )}
+              <ErrorBox error={settingsError} />
+            </Callout>
+          )}
+
+          <details className="more">
+            <summary>Other ways to get this chat</summary>
+            <div className="actions">
+              {endpointEnabled && (
+                <button
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => void getChat(state.tabId, 'page')}
+                >
+                  Read it from the page
+                </button>
+              )}
+              <button className="btn" onClick={() => navigate({ name: 'import' })}>
+                Import from export file
+              </button>
+              <button className="btn" onClick={onRefresh} disabled={busy}>
+                Refresh
+              </button>
+            </div>
+          </details>
         </section>
       );
     }

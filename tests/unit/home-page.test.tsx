@@ -36,33 +36,37 @@ const page = (
   );
 
 describe('HomePage', () => {
-  it('shows the detected conversation with extraction enabled', () => {
+  it('shows the detected chat with one main action', () => {
     page(detected());
     expect(screen.getByTestId('conversation-title').textContent).toBe(
       'Debugging the auth middleware',
     );
-    expect(screen.getByTestId('message-count').textContent).toBe('4');
-    expect(screen.getByRole('button', { name: 'Analyze conversation' })).toHaveProperty(
-      'disabled',
-      false,
-    );
+    expect(screen.getByRole('button', { name: 'Get this chat' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('list', { name: 'Progress' })).toBeTruthy();
   });
 
-  it('disables extraction and points to the export when no messages are found', () => {
+  it('explains when the page has no readable messages and offers alternatives', () => {
     page(detected({ selectorStrategy: null, renderedMessageCount: 0 }));
-    expect(screen.getByTestId('selector-warning').textContent).toMatch(/export file/);
-    expect(screen.getByRole('button', { name: 'Analyze conversation' })).toHaveProperty(
-      'disabled',
-      true,
-    );
+    expect(screen.getByTestId('selector-warning').textContent).toMatch(/one-click|export/);
+    expect(screen.getByRole('button', { name: 'Import from export file' })).toBeTruthy();
   });
 
-  it('hides the unofficial endpoint unless enabled in settings', () => {
+  it('offers one-click behind an explicit consent until it is turned on', () => {
     page(detected());
-    expect(screen.queryByText(/unofficial endpoint/i)).toBeNull();
-    cleanup();
+    screen.getByRole('button', { name: 'Turn on one-click…' }).click();
+    return Promise.resolve().then(() => {
+      expect(screen.getByRole('button', { name: 'Turn on one-click' })).toHaveProperty(
+        'disabled',
+        true,
+      );
+      expect(screen.getByText(/doesn’t officially support/)).toBeTruthy();
+    });
+  });
+
+  it('hides the one-click tip once it is on, and keeps page reading as another way', () => {
     page(detected(), { endpointEnabled: true });
-    expect(screen.getByText(/Advanced · unofficial endpoint/)).toBeTruthy();
+    expect(screen.queryByText(/Tip: get the whole chat/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Read it from the page' })).toBeTruthy();
   });
 
   it('always offers the export import', () => {

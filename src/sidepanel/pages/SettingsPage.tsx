@@ -145,10 +145,10 @@ export function SettingsPage({ onSettingsChanged }: { onSettingsChanged: (s: Set
       </section>
 
       <section className="card">
-        <h2>Migration defaults</h2>
+        <h2>Defaults for long chats</h2>
         <div className="grid2">
           <label className="field">
-            <span>Context budget (tokens)</span>
+            <span>Most text to send Gemini (tokens)</span>
             <input
               className="input"
               type="number"
@@ -161,7 +161,7 @@ export function SettingsPage({ onSettingsChanged }: { onSettingsChanged: (s: Set
             />
           </label>
           <label className="field">
-            <span>Hybrid: recent messages</span>
+            <span>Recent messages kept word for word</span>
             <input
               className="input"
               type="number"
@@ -177,13 +177,13 @@ export function SettingsPage({ onSettingsChanged }: { onSettingsChanged: (s: Set
       </section>
 
       <section className="card card-caution">
-        <p className="eyebrow">Unofficial · unsupported · off by default</p>
-        <h2>Internal ChatGPT endpoint</h2>
+        <p className="eyebrow">Unofficial · off by default</p>
+        <h2>One-click: get whole chats from ChatGPT</h2>
         <p className="muted small">
-          Lets ChatBridge request the open conversation from chatgpt.com the way the ChatGPT web app
-          does, using your signed-in session. It returns every branch and is current, but OpenAI
-          does not support it and it may stop working. ChatBridge never depends on it; page
-          extraction and the export file always remain available. Each use asks for confirmation.
+          ChatBridge asks chatgpt.com for the open chat the same way the ChatGPT website loads it,
+          using your logged-in session. It gets every message at once, with no scrolling. OpenAI
+          doesn’t officially support it, so it may stop working; ChatBridge then reads the page
+          instead. Nothing is sent anywhere else.
         </p>
         <label className="check">
           <input
@@ -192,7 +192,7 @@ export function SettingsPage({ onSettingsChanged }: { onSettingsChanged: (s: Set
             onChange={(e) => void patch({ endpointEnabled: e.target.checked })}
             data-testid="endpoint-toggle"
           />
-          <span>Enable the unofficial endpoint option</span>
+          <span>Use one-click (unofficial)</span>
         </label>
       </section>
 

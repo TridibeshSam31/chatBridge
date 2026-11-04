@@ -78,5 +78,65 @@ test('side panel shows the conversation of the focused ChatGPT tab', async ({
 
   // The panel reacts to tab activation/updates, exactly as the real side panel does.
   await expect(panel.getByTestId('conversation-title')).toHaveText('Debugging the auth middleware');
-  await expect(panel.getByTestId('message-count')).toHaveText('4');
+  await expect(panel.getByRole('button', { name: 'Get this chat' })).toBeEnabled();
+});
+
+test('extracts the Nov 2026 ChatGPT layout in real Chromium, code lines included', async ({
+  context,
+  serviceWorker,
+}) => {
+  const url = 'https://chatgpt.com/g/g-p-abc-dsa/c/6aa18b1f-077c-83ee-9850-c4144d40a054';
+  const page = await context.newPage();
+  await page.route(url, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: readFileSync(
+        resolve(import.meta.dirname, '../fixtures/chatgpt-dom/conversation-2026.html'),
+        'utf8',
+      ),
+    }),
+  );
+  await page.goto(url);
+
+  const send = (message: unknown) =>
+    serviceWorker.evaluate(
+      async ({ url, message }) => {
+        const [tab] = await chrome.tabs.query({ url });
+        if (tab?.id === undefined) return null;
+        return chrome.tabs.sendMessage(tab.id, message).catch((err: unknown) => String(err));
+      },
+      { url, message },
+    );
+  await expect
+    .poll(() => send({ type: 'chatbridge/detect', protocol: 1 }), { timeout: 10_000 })
+    .toMatchObject({
+      ok: true,
+      data: { renderedMessageCount: 4, selectorStrategy: 'search-unit' },
+    });
+
+  const result = (await send({ type: 'chatbridge/extract-dom', protocol: 1, scroll: false })) as {
+    data: { transcriptId: string };
+  };
+  const stored = await serviceWorker.evaluate(
+    (id) =>
+      new Promise((done, fail) => {
+        const open = indexedDB.open('chatbridge');
+        open.onerror = () => fail(open.error);
+        open.onsuccess = () => {
+          const get = open.result.transaction('transcripts').objectStore('transcripts').get(id);
+          get.onsuccess = () => done(get.result);
+        };
+      }),
+    result.data.transcriptId,
+  );
+  const messages = (stored as { conversation: { messages: { content: unknown[] }[] } }).conversation
+    .messages;
+  expect(messages).toHaveLength(4);
+  expect(messages[1]!.content).toContainEqual({
+    type: 'code',
+    text: 'slow = head;\nfast = head->next;',
+    language: 'c++',
+  });
+  expect(JSON.stringify(messages)).not.toMatch(/SIDEBAR_MUST_NOT_BE_READ|Retry/);
 });

@@ -1,5 +1,5 @@
 import type { ContentBlock } from '../../core/conversation/schema';
-import { LANGUAGE_LABEL } from './selectors';
+import { CODE_BLOCK, CODE_SOURCE, COPY_EXCLUDED, LANGUAGE_LABEL } from './selectors';
 
 /**
  * Converts rendered ChatGPT message HTML into content blocks: markdown text plus
@@ -49,6 +49,12 @@ export function elementToBlocks(root: Element): ContentBlock[] {
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       const c = child as Element;
       if (SKIP.has(c.tagName)) continue;
+      if (c.matches(CODE_BLOCK)) {
+        flush();
+        blocks.push(codeBlock(c));
+        continue;
+      }
+      if (c.matches(COPY_EXCLUDED)) continue;
 
       switch (c.tagName) {
         case 'P':
@@ -108,7 +114,7 @@ function inline(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
   if (node.nodeType !== Node.ELEMENT_NODE) return '';
   const el = node as Element;
-  if (SKIP.has(el.tagName)) return '';
+  if (SKIP.has(el.tagName) || el.matches(COPY_EXCLUDED)) return '';
   if (el.classList.contains('katex')) {
     const tex = el.querySelector('annotation')?.textContent;
     return tex ? `$${tex}$` : (el.textContent ?? '');
@@ -184,27 +190,53 @@ function table(el: Element): string {
   ].join('\n');
 }
 
-function codeBlock(pre: Element): ContentBlock {
-  const code = pre.querySelector('code');
+/**
+ * A code block: a <pre> (older layout) or a [data-code-block] container whose
+ * header holds the language label and whose source sits in [data-code-block-source].
+ */
+function codeBlock(container: Element): ContentBlock {
+  const source = container.querySelector(CODE_SOURCE) ?? container.querySelector('code');
   let language: string | undefined;
-  for (const token of Array.from(code?.classList ?? [])) {
+  for (const token of Array.from(source?.classList ?? [])) {
     const m = /^(?:language|lang)-(.+)$/.exec(token);
     if (m) language = m[1];
   }
   if (!language) {
-    // Header label: a short text node inside <pre> but outside <code>.
-    const walker = pre.ownerDocument.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    // Header label: a short text node outside the source and outside buttons.
+    const walker = container.ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      if (code?.contains(n) || n.parentElement?.closest('button')) continue;
+      if (source?.contains(n) || n.parentElement?.closest('button')) continue;
       const t = n.textContent?.trim() ?? '';
       if (t && LANGUAGE_LABEL.test(t)) {
-        language = t.toLowerCase();
+        if (!/^plain ?text$/i.test(t)) language = t.toLowerCase();
         break;
       }
     }
   }
-  const text = (code ?? pre).textContent ?? '';
+  const text = source ? renderedText(source) : textWithoutChrome(container);
   return { type: 'code', text: text.replace(/\n$/, ''), ...(language ? { language } : {}) };
+}
+
+/**
+ * Text as displayed. Editor-style code views put each line in its own element,
+ * so textContent would run the lines together; innerText keeps the line breaks.
+ */
+function renderedText(el: Element): string {
+  const shown = (el as HTMLElement).innerText as string | undefined;
+  if (typeof shown === 'string' && shown !== '') return shown;
+  // No layout (e.g. jsdom): treat child elements as lines when the text has none.
+  const text = el.textContent ?? '';
+  return el.children.length > 1 && !text.includes('\n')
+    ? Array.from(el.children, (line) => line.textContent ?? '').join('\n')
+    : text;
+}
+
+/** Text of an element without buttons and other page chrome inside it. */
+export function textWithoutChrome(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  for (const junk of Array.from(copy.querySelectorAll(`button, svg, ${COPY_EXCLUDED}`)))
+    junk.remove();
+  return copy.textContent ?? '';
 }
 
 function imageBlock(img: Element): ContentBlock {
