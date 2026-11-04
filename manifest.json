@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "ChatBridge",
+  "version": "0.0.0",
+  "description": "Move AI conversations from ChatGPT to Gemini with their context intact.",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Open ChatBridge"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["sidePanel", "scripting", "storage"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["content/chatgpt.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

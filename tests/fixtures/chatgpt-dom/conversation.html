@@ -1,0 +1,47 @@
+<!doctype html>
+<!--
+  Structural stand-in for a ChatGPT conversation page: the data-* attributes and
+  nesting that ChatBridge relies on, with utility classes stripped. Not a copy of
+  real content. Conversation id: 6f1c2a9e-3b4d-4e5f-8a7b-1c2d3e4f5a6b
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Debugging the auth middleware</title>
+  </head>
+  <body>
+    <nav>
+      <a href="/c/0a0a0a0a-1111-4222-8333-444444444444">Grocery list ideas</a>
+      <a href="/c/6f1c2a9e-3b4d-4e5f-8a7b-1c2d3e4f5a6b">Debugging the auth middleware</a>
+    </nav>
+    <main>
+      <article data-testid="conversation-turn-1">
+        <div data-message-author-role="user" data-message-id="aaa1">
+          <div class="whitespace-pre-wrap">
+            My Express auth middleware returns 401 for valid tokens.
+          </div>
+        </div>
+      </article>
+      <article data-testid="conversation-turn-2">
+        <div data-message-author-role="assistant" data-message-id="bbb1">
+          <div class="markdown prose">
+            <p>Check that you're reading the header case-insensitively:</p>
+            <pre><code class="language-js">const token = req.get('authorization')?.split(' ')[1];</code></pre>
+          </div>
+        </div>
+      </article>
+      <article data-testid="conversation-turn-3">
+        <div data-message-author-role="user" data-message-id="aaa2">
+          <div class="whitespace-pre-wrap">
+            That fixed it. Always use TypeScript in your answers from now on.
+          </div>
+        </div>
+      </article>
+      <article data-testid="conversation-turn-4">
+        <div data-message-author-role="assistant" data-message-id="bbb2">
+          <div class="markdown prose"><p>Got it — TypeScript from here on.</p></div>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>
