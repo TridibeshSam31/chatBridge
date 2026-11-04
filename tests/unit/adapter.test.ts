@@ -58,8 +58,27 @@ describe('detectConversation', () => {
       <article data-testid="conversation-turn-1" data-turn="user"><p>hi</p></article>
       <article data-testid="conversation-turn-2" data-turn="assistant"><p>hello</p></article>`);
     const result = detectConversation(doc, URL_);
-    expect(result.selectorStrategy).toBe('conversation-turn-article');
+    expect(result.selectorStrategy).toBe('conversation-turn');
     expect(result.renderedRoleCounts).toEqual({ user: 1, assistant: 1, other: 0 });
+  });
+
+  it('finds <section> turn containers', () => {
+    const doc = docFrom(`
+      <section data-testid="conversation-turn-1" data-turn="user"><p>hi</p></section>
+      <section data-testid="conversation-turn-2" data-turn="assistant"><p>hello</p></section>`);
+    const result = detectConversation(doc, URL_);
+    expect(result.selectorStrategy).toBe('conversation-turn');
+    expect(result.renderedRoleCounts).toEqual({ user: 1, assistant: 1, other: 0 });
+  });
+
+  it('falls back to data-turn, then to bare message ids', () => {
+    const turns = docFrom(`
+      <div data-turn="user"><p>hi</p></div><div data-turn="assistant"><p>hello</p></div>`);
+    expect(detectConversation(turns, URL_).selectorStrategy).toBe('data-turn');
+    const ids = docFrom(`<div data-message-id="a"><p>hi</p></div>`);
+    const result = detectConversation(ids, URL_);
+    expect(result.selectorStrategy).toBe('data-message-id');
+    expect(result.renderedMessageCount).toBe(1);
   });
 
   it('has no conversation on the home page', () => {

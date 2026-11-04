@@ -1,5 +1,5 @@
 import { bump, type Histogram, shapeOf, urlShape } from '../../../shared/redact';
-import { MESSAGE_STRATEGIES, sidebarLinkFor, GENERIC_TITLES } from '../selectors';
+import { MESSAGE_STRATEGIES, sidebarLinkFor, GENERIC_TITLES, TURN_CONTAINER } from '../selectors';
 import { parseConversationId } from '../url';
 
 /**
@@ -149,7 +149,7 @@ export async function probeDom(
   const messages = Array.from(root.querySelectorAll('[data-message-author-role]')).filter(inScope);
   const byRole = (role: string) =>
     messages.filter((m) => m.getAttribute('data-message-author-role') === role);
-  const turnOf = (el: Element) => el.closest('article') ?? el;
+  const turnOf = (el: Element) => el.closest(TURN_CONTAINER) ?? el;
   const firstWith = (els: Element[], selector: string) =>
     els.find((el) => el.querySelector(selector));
 

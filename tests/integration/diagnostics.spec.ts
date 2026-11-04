@@ -83,7 +83,9 @@ test('page structure check runs on the open conversation and leaks no content', 
   expect(json.kind).toBe('dom-probe');
   expect(json.strategies).toEqual([
     expect.objectContaining({ name: 'data-message-author-role', matches: 4, withId: 4 }),
-    expect.objectContaining({ name: 'conversation-turn-article', matches: 4 }),
+    expect.objectContaining({ name: 'conversation-turn', matches: 4 }),
+    expect.objectContaining({ name: 'data-turn' }),
+    expect.objectContaining({ name: 'data-message-id', matches: 4 }),
   ]);
   for (const word of ['Express', 'middleware', 'Debugging', 'Grocery', CONVERSATION_ID]) {
     expect(text).not.toContain(word);

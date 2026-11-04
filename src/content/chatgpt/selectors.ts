@@ -6,8 +6,9 @@
  * and its name is reported, so breakage shows up as "no strategy matched" rather
  * than as a silently empty result.
  *
- * Verified against public knowledge of the DOM as of late 2026. Re-verify against
- * a live session before Phase 2 extraction work.
+ * Not yet verified against a live session: on one real account (Nov 2026) the
+ * first two strategies matched nothing, so later ones cover other known shapes.
+ * Run Diagnostics → Page structure to confirm which one matches.
  */
 
 export interface MessageSelectorStrategy {
@@ -28,14 +29,34 @@ export const MESSAGE_STRATEGIES: readonly MessageSelectorStrategy[] = [
     id: (el) => el.getAttribute('data-message-id'),
   },
   {
-    // Fallback: turn containers, with the role taken from a nested attribute if present.
-    name: 'conversation-turn-article',
-    message: 'article[data-testid^="conversation-turn-"]',
+    // Turn containers of any tag (an <article> in older layouts, a <section> in newer
+    // ones), with the role taken from the container or a nested attribute.
+    name: 'conversation-turn',
+    message: '[data-testid^="conversation-turn-"]',
     role: (el) =>
-      el.querySelector('[data-message-author-role]')?.getAttribute('data-message-author-role') ??
       el.getAttribute('data-turn') ??
+      el.querySelector('[data-message-author-role]')?.getAttribute('data-message-author-role') ??
       null,
     id: (el) => el.querySelector('[data-message-id]')?.getAttribute('data-message-id') ?? null,
+  },
+  {
+    name: 'data-turn',
+    message: '[data-turn="user"], [data-turn="assistant"]',
+    role: (el) => el.getAttribute('data-turn'),
+    id: (el) =>
+      el.getAttribute('data-message-id') ??
+      el.querySelector('[data-message-id]')?.getAttribute('data-message-id') ??
+      null,
+  },
+  {
+    // Last resort: message ids alone; the role comes from the nearest turn marker.
+    name: 'data-message-id',
+    message: '[data-message-id]',
+    role: (el) =>
+      el.closest('[data-turn]')?.getAttribute('data-turn') ??
+      el.closest('[data-message-author-role]')?.getAttribute('data-message-author-role') ??
+      null,
+    id: (el) => el.getAttribute('data-message-id'),
   },
 ];
 
@@ -56,5 +77,7 @@ export const STOP_GENERATING = '[data-testid="stop-button"]';
 export const PAGER_TEXT = /^\s*(\d+)\s*\/\s*(\d+)\s*$/;
 /** Short language labels in code-block headers. */
 export const LANGUAGE_LABEL = /^[A-Za-z][A-Za-z0-9+#. -]{0,19}$/;
+/** The container of one turn, used for turn numbers and branch pagers. */
+export const TURN_CONTAINER = '[data-testid^="conversation-turn-"], article';
 /** Extracts the turn number from a turn container's data-testid. */
 export const TURN_NUMBER = /conversation-turn-(\d+)$/;

@@ -109,7 +109,10 @@ function SourceCard({ state, onRefresh, navigate, endpointEnabled }: Props) {
           {c.selectorStrategy === null ? (
             <p className="warn" data-testid="selector-warning">
               No messages found on the page. The chat may still be loading, or ChatGPT’s layout has
-              changed — use the export file instead.
+              changed —{' '}
+              {endpointEnabled
+                ? 'use the internal endpoint below, or the export file.'
+                : 'use the export file, or enable the internal endpoint in Settings.'}
             </p>
           ) : (
             <p className="muted small">
@@ -146,7 +149,7 @@ function SourceCard({ state, onRefresh, navigate, endpointEnabled }: Props) {
             </>
           )}
           {endpointEnabled && (
-            <details className="advanced">
+            <details className="advanced" open={c.selectorStrategy === null || undefined}>
               <summary>Advanced · unofficial endpoint</summary>
               <Consent
                 to="ChatGPT’s unofficial conversation endpoint"

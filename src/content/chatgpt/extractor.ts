@@ -16,6 +16,7 @@ import {
   MESSAGE_STRATEGIES,
   PAGER_TEXT,
   STOP_GENERATING,
+  TURN_CONTAINER,
   TURN_NUMBER,
   USER_TEXT,
 } from './selectors';
@@ -79,7 +80,7 @@ export async function extractFromDom(
     );
     elements.forEach((el, index) => {
       const id = strategy.id(el);
-      const turnEl = el.closest('article');
+      const turnEl = el.closest(TURN_CONTAINER);
       const turnMatch = TURN_NUMBER.exec(turnEl?.getAttribute('data-testid') ?? '');
       const turn = turnMatch ? Number(turnMatch[1]) : null;
       // Without ids, fall back to turn number (stable across scrolling) or DOM position.
